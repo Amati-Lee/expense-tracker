@@ -34,10 +34,10 @@ body{font-family:"PingFang TC","Heiti TC","Noto Sans TC","Microsoft JhengHei",-a
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}
 .cat-btn{padding:10px 4px;border:2px solid #e0e0e0;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;text-align:center;transition:all .2s}
 .cat-btn.active{border-color:var(--primary);background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff}
-.note-row{display:flex;gap:8px;margin-bottom:12px}
+.note-row{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
 .note-input{flex:1;padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;outline:none;font-family:inherit}
 .note-input:focus{border-color:var(--primary)}
-.date-input{padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;outline:none;font-family:inherit;width:140px}
+.date-input{padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;outline:none;font-family:inherit;width:100%}
 .date-input:focus{border-color:var(--primary)}
 .submit-btn{width:100%;padding:14px;border:none;border-radius:var(--radius);background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-size:16px;font-weight:700;cursor:pointer;transition:transform .1s}
 .submit-btn:active{transform:scale(.97)}

@@ -82,10 +82,44 @@ body{font-family:"PingFang TC","Heiti TC","Noto Sans TC","Microsoft JhengHei",-a
 .modal button.close{background:var(--bg);margin-top:8px}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 24px;border-radius:20px;font-size:14px;z-index:300;opacity:0;transition:opacity .3s}
 .toast.show{opacity:1}
+
+/* Lock Screen */
+#lockScreen{display:none;position:fixed;inset:0;z-index:500;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+#lockScreen.show{display:flex}
+#lockScreen .lock-icon{font-size:56px;margin-bottom:12px}
+#lockScreen h2{font-size:20px;color:var(--text);margin-bottom:4px}
+#lockScreen .lock-hint{font-size:13px;color:var(--text2);margin-bottom:20px}
+#lockScreen .lock-row{display:flex;gap:8px;width:100%;max-width:320px}
+#lockScreen input{flex:1;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;outline:none;font-family:inherit}
+#lockScreen input:focus{border-color:var(--primary)}
+#lockScreen .lock-btn{padding:12px 20px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+#lockScreen .lock-error{color:var(--red);font-size:13px;margin-top:8px;min-height:18px}
+
+/* Settings toggle row */
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px;border:2px solid #e0e0e0;border-radius:8px;margin-bottom:8px}
+.setting-row .sr-label{font-size:14px}
+.setting-row .sr-status{font-size:12px;color:var(--text2)}
+.toggle{position:relative;width:44px;height:24px;background:#ccc;border-radius:12px;cursor:pointer;transition:.2s;flex-shrink:0}
+.toggle.on{background:var(--primary)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s}
+.toggle.on::after{left:22px}
 </style>
 </head>
 <body>
 
+<!-- Lock Screen -->
+<div id="lockScreen">
+  <div class="lock-icon">🔐</div>
+  <h2>記帳本</h2>
+  <div class="lock-hint">請輸入密碼解鎖</div>
+  <div class="lock-row">
+    <input type="password" id="lockInput" placeholder="密碼">
+    <button class="lock-btn" id="lockBtn" onclick="doUnlock()">解鎖</button>
+  </div>
+  <div class="lock-error" id="lockError"></div>
+</div>
+
+<div id="mainApp">
 <div class="header" style="position:relative">
   <div style="font-size:10px;opacity:.6;position:absolute;top:6px;left:12px">v1.0</div>
   <button class="settings-btn" onclick="showSettings()">⚙</button>
@@ -147,6 +181,13 @@ body{font-family:"PingFang TC","Heiti TC","Noto Sans TC","Microsoft JhengHei",-a
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <h3>⚙ 設定</h3>
+    <div class="setting-row">
+      <div>
+        <div class="sr-label">🔒 開啟密碼保護</div>
+        <div class="sr-status" id="pwStatus">未設定</div>
+      </div>
+      <div class="toggle" id="pwToggle" onclick="toggleAppPassword()"></div>
+    </div>
     <button onclick="exportData()">📤 匯出資料（明文）</button>
     <button onclick="showEncryptExport()">🔒 匯出資料（加密）</button>
     <button onclick="document.getElementById('importFile').click()">📥 匯入資料</button>
@@ -178,6 +219,31 @@ body{font-family:"PingFang TC","Heiti TC","Noto Sans TC","Microsoft JhengHei",-a
     <button class="close" onclick="document.getElementById('decryptModal').classList.remove('show')">取消</button>
   </div>
 </div>
+
+<!-- Set App Password Modal -->
+<div class="modal-overlay" id="setPwModal">
+  <div class="modal">
+    <h3 id="setPwTitle">🔒 設定開啟密碼</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">設定後每次開啟記帳本需輸入密碼。可隨時在設定中關閉。</p>
+    <input id="setPw1" type="password" placeholder="輸入密碼（至少 4 字元）" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:8px;outline:none;font-family:inherit">
+    <input id="setPw2" type="password" placeholder="再次確認密碼" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:inherit">
+    <button onclick="confirmSetPw()" style="background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:700">確認設定</button>
+    <button class="close" onclick="document.getElementById('setPwModal').classList.remove('show')">取消</button>
+  </div>
+</div>
+
+<!-- Verify Current Password Modal (for disabling) -->
+<div class="modal-overlay" id="verifyPwModal">
+  <div class="modal">
+    <h3>🔓 驗證密碼</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">請輸入目前的密碼以關閉密碼保護。</p>
+    <input id="verifyPw" type="password" placeholder="目前密碼" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:inherit">
+    <button onclick="confirmRemovePw()" style="background:var(--red);color:#fff;font-weight:700">確認關閉</button>
+    <button class="close" onclick="document.getElementById('verifyPwModal').classList.remove('show')">取消</button>
+  </div>
+</div>
+
+</div><!-- end mainApp -->
 
 <div class="toast" id="toast"></div>
 
@@ -556,11 +622,81 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+// === App Password (optional lock) ===
+const APP_PW_KEY = 'expense_app_pw'; // stored password (plain, local only)
+
+function getAppPw() { return localStorage.getItem(APP_PW_KEY) || ''; }
+function hasAppPw() { return !!getAppPw(); }
+
+function updatePwUI() {
+  const has = hasAppPw();
+  document.getElementById('pwToggle').classList.toggle('on', has);
+  document.getElementById('pwStatus').textContent = has ? '已啟用' : '未設定';
+}
+
+function toggleAppPassword() {
+  if (hasAppPw()) {
+    // 要關閉 → 先驗證密碼
+    document.getElementById('verifyPw').value = '';
+    document.getElementById('verifyPwModal').classList.add('show');
+  } else {
+    // 要開啟 → 設定密碼
+    document.getElementById('setPw1').value = '';
+    document.getElementById('setPw2').value = '';
+    document.getElementById('setPwModal').classList.add('show');
+  }
+}
+
+function confirmSetPw() {
+  const pw1 = document.getElementById('setPw1').value;
+  const pw2 = document.getElementById('setPw2').value;
+  if (pw1.length < 4) { toast('密碼至少 4 個字元'); return; }
+  if (pw1 !== pw2) { toast('兩次密碼不一致'); return; }
+  localStorage.setItem(APP_PW_KEY, pw1);
+  document.getElementById('setPwModal').classList.remove('show');
+  updatePwUI();
+  toast('密碼保護已啟用');
+}
+
+function confirmRemovePw() {
+  const pw = document.getElementById('verifyPw').value;
+  if (pw !== getAppPw()) { toast('密碼錯誤'); return; }
+  localStorage.removeItem(APP_PW_KEY);
+  document.getElementById('verifyPwModal').classList.remove('show');
+  updatePwUI();
+  toast('密碼保護已關閉');
+}
+
+function doUnlock() {
+  const pw = document.getElementById('lockInput').value;
+  if (pw === getAppPw()) {
+    document.getElementById('lockScreen').classList.remove('show');
+    document.getElementById('lockInput').value = '';
+    document.getElementById('lockError').textContent = '';
+  } else {
+    document.getElementById('lockError').textContent = '密碼錯誤';
+    document.getElementById('lockInput').value = '';
+    document.getElementById('lockInput').focus();
+  }
+}
+
+// Enter key to unlock
+document.getElementById('lockInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doUnlock();
+});
+
 // === Init ===
+// 如果有設定密碼，顯示鎖定畫面
+if (hasAppPw()) {
+  document.getElementById('lockScreen').classList.add('show');
+  document.getElementById('lockInput').focus();
+}
+
 document.getElementById('dateInput').value = today();
 updateMonthLabel();
 updateSummary();
 renderCats();
+updatePwUI();
 
 // PWA
 if ('serviceWorker' in navigator) {

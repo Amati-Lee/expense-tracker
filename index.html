@@ -147,11 +147,35 @@ body{font-family:"PingFang TC","Heiti TC","Noto Sans TC","Microsoft JhengHei",-a
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <h3>⚙ 設定</h3>
-    <button onclick="exportData()">📤 匯出資料 (JSON)</button>
-    <button onclick="document.getElementById('importFile').click()">📥 匯入資料 (JSON)</button>
-    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+    <button onclick="exportData()">📤 匯出資料（明文）</button>
+    <button onclick="showEncryptExport()">🔒 匯出資料（加密）</button>
+    <button onclick="document.getElementById('importFile').click()">📥 匯入資料</button>
+    <input type="file" id="importFile" accept=".json,.enc" style="display:none" onchange="importData(event)">
     <button class="danger" onclick="clearData()">🗑 清除所有資料</button>
     <button class="close" onclick="hideSettings()">關閉</button>
+  </div>
+</div>
+
+<!-- Encrypt Export Modal -->
+<div class="modal-overlay" id="encryptModal">
+  <div class="modal">
+    <h3>🔒 加密匯出</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">設定密碼後，匯出檔案將以 AES-256 加密。匯入時需輸入相同密碼。</p>
+    <input id="encPw1" type="password" placeholder="輸入密碼（至少 4 字元）" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:8px;outline:none;font-family:inherit">
+    <input id="encPw2" type="password" placeholder="再次確認密碼" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:inherit">
+    <button onclick="doEncryptExport()" style="background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:700">確認匯出</button>
+    <button class="close" onclick="document.getElementById('encryptModal').classList.remove('show')">取消</button>
+  </div>
+</div>
+
+<!-- Decrypt Import Modal -->
+<div class="modal-overlay" id="decryptModal">
+  <div class="modal">
+    <h3>🔓 輸入密碼解密</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">此備份檔已加密，請輸入匯出時設定的密碼。</p>
+    <input id="decPw" type="password" placeholder="輸入密碼" style="padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px;outline:none;font-family:inherit">
+    <button onclick="doDecryptImport()" style="background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:700">解密匯入</button>
+    <button class="close" onclick="document.getElementById('decryptModal').classList.remove('show')">取消</button>
   </div>
 </div>
 
@@ -388,6 +412,42 @@ function switchTab(name, btn) {
   if (name === 'stats') renderStats();
 }
 
+// === Crypto helpers ===
+const ENC = new TextEncoder();
+const DEC = new TextDecoder();
+
+async function deriveKey(password, salt) {
+  const raw = await crypto.subtle.importKey('raw', ENC.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+    raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptData(plaintext, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, ENC.encode(plaintext));
+  const buf = new Uint8Array(16 + 12 + ct.byteLength);
+  buf.set(salt, 0);
+  buf.set(iv, 16);
+  buf.set(new Uint8Array(ct), 28);
+  let binary = '';
+  for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+  return btoa(binary);
+}
+
+async function decryptData(b64, password) {
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = raw.slice(0, 16);
+  const iv = raw.slice(16, 28);
+  const ct = raw.slice(28);
+  const key = await deriveKey(password, salt);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return DEC.decode(pt);
+}
+
 // === Settings ===
 function showSettings() { document.getElementById('settingsModal').classList.add('show'); }
 function hideSettings() { document.getElementById('settingsModal').classList.remove('show'); }
@@ -399,25 +459,85 @@ function exportData() {
   a.download = '記帳本_' + today() + '.json';
   a.click();
   toast('已匯出');
+  hideSettings();
 }
+
+// 加密匯出
+function showEncryptExport() {
+  document.getElementById('encPw1').value = '';
+  document.getElementById('encPw2').value = '';
+  document.getElementById('encryptModal').classList.add('show');
+}
+async function doEncryptExport() {
+  const pw1 = document.getElementById('encPw1').value;
+  const pw2 = document.getElementById('encPw2').value;
+  if (pw1.length < 4) { toast('密碼至少 4 個字元'); return; }
+  if (pw1 !== pw2) { toast('兩次密碼不一致'); return; }
+  try {
+    const plaintext = JSON.stringify(getRecords());
+    const encrypted = await encryptData(plaintext, pw1);
+    const payload = JSON.stringify({ encrypted: true, data: encrypted });
+    const blob = new Blob([payload], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '記帳本_加密_' + today() + '.enc';
+    a.click();
+    document.getElementById('encryptModal').classList.remove('show');
+    toast('已加密匯出');
+    hideSettings();
+  } catch (e) { toast('加密失敗：' + e.message); }
+}
+
+// 匯入（自動偵測加密或明文）
+let pendingEncFile = null;
 function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
+  e.target.value = '';
   const reader = new FileReader();
   reader.onload = function(ev) {
     try {
-      const data = JSON.parse(ev.target.result);
-      if (!Array.isArray(data)) throw '格式錯誤';
-      const existing = getRecords();
-      const existIds = new Set(existing.map(r=>r.id));
-      const newRecs = data.filter(r => r.id && !existIds.has(r.id));
-      saveRecords([...existing, ...newRecs]);
-      updateSummary(); renderHistory(); renderStats();
-      toast('已匯入 ' + newRecs.length + ' 筆');
+      const obj = JSON.parse(ev.target.result);
+      if (obj.encrypted && obj.data) {
+        // 加密檔案，需要密碼
+        pendingEncFile = obj.data;
+        document.getElementById('decPw').value = '';
+        document.getElementById('decryptModal').classList.add('show');
+        hideSettings();
+      } else if (Array.isArray(obj)) {
+        // 明文 JSON
+        mergeImport(obj);
+        hideSettings();
+      } else {
+        toast('匯入失敗：格式不正確');
+      }
     } catch(err) { toast('匯入失敗：格式不正確'); }
   };
   reader.readAsText(file);
-  e.target.value = '';
+}
+
+async function doDecryptImport() {
+  const pw = document.getElementById('decPw').value;
+  if (!pw) { toast('請輸入密碼'); return; }
+  try {
+    const json = await decryptData(pendingEncFile, pw);
+    const data = JSON.parse(json);
+    if (!Array.isArray(data)) throw new Error('格式錯誤');
+    mergeImport(data);
+    document.getElementById('decryptModal').classList.remove('show');
+    pendingEncFile = null;
+  } catch (e) {
+    toast('密碼錯誤或檔案損壞');
+  }
+}
+
+function mergeImport(data) {
+  const existing = getRecords();
+  const existIds = new Set(existing.map(r => r.id));
+  const newRecs = data.filter(r => r.id && !existIds.has(r.id));
+  saveRecords([...existing, ...newRecs]);
+  updateSummary(); renderHistory(); renderStats();
+  toast('已匯入 ' + newRecs.length + ' 筆');
 }
 function clearData() {
   if (!confirm('確定清除所有記帳資料？此操作無法復原。')) return;
